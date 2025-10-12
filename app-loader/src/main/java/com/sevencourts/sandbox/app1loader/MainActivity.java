@@ -40,7 +40,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadAndRunDex() throws Exception {
-        String apkFileName = "app-payload-debug.apk";
+        String apkFileName = "payload.apk";
 
         File dexFile = new File(getCacheDir(), apkFileName);
 
