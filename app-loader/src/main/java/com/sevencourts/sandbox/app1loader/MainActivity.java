@@ -1,9 +1,11 @@
 package com.sevencourts.sandbox.app1loader;
 
+import android.app.AlertDialog;
 import android.content.Context;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.Button;
+
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.io.File;
@@ -32,62 +34,81 @@ public class MainActivity extends AppCompatActivity {
         Button loadButton = findViewById(R.id.loadButton);
         loadButton.setOnClickListener(v -> {
             try {
-                loadAndRunDex();
+                loadAndRunDex(v.getContext());
             } catch (Exception e) {
                 Log.e(TAG, "Failed to load and run DEX", e);
             }
         });
     }
 
-    private void loadAndRunDex() throws Exception {
+    private void loadAndRunDex(Context ctx) throws Exception {
         String apkFileName = "payload.apk";
 
-        File dexFile = new File(getCacheDir(), apkFileName);
+        File cachedApkFile = new File(getCacheDir(), apkFileName);
 
         // --- 1. Copy the APK from assets to the app's private cache directory ---
-        if (dexFile.exists()) {
-            boolean deleted = dexFile.delete();
-            Log.d(TAG,"DEX file already exists. Deleting it: " + (deleted ? "OK" : "NOK"));
+        if (cachedApkFile.exists()) {
+            boolean deleted = cachedApkFile.delete();
+            Log.d(TAG,"APK file already exists. Deleting it: " + (deleted ? "OK" : "NOK"));
         }
 
-        Log.d(TAG, "Copying DEX file from assets...");
+        Log.d(TAG, "Copying APK file from assets...");
         try (InputStream is = getAssets().open(apkFileName);
-             OutputStream os = new FileOutputStream(dexFile)) {
+             OutputStream os = new FileOutputStream(cachedApkFile)) {
             byte[] buffer = new byte[1024];
             int length;
             while ((length = is.read(buffer)) > 0) {
                 os.write(buffer, 0, length);
             }
         }
-        Log.d(TAG, "Copied APK to: " + dexFile.getAbsolutePath());
+        Log.d(TAG, "Cached APK to: " + cachedApkFile.getAbsolutePath());
 
-        // Make the file read-only after copying
-        boolean success = dexFile.setReadOnly();
+        // --- Verify the signature against the trusted certificate ---
+        Log.d(TAG, "Verifying signature...");
+        if (!APKSignatureChecker.isSignatureValid(ctx, cachedApkFile, "public_key.cer")) {
 
-        Log.println(success ? Log.DEBUG : Log.WARN, TAG, "Set DEX file to read-only.");
+            // Clean up the invalid file
+            boolean deleted = cachedApkFile.delete();
+            Log.d(TAG,"Deleting the cached APK file: " + (deleted ? "OK" : "NOK"));
+
+            new AlertDialog.Builder(ctx)
+                    .setTitle("Signature check failed")
+                    .setMessage("Check the log")
+                    .setPositiveButton(android.R.string.ok, null)
+                    .setIcon(android.R.drawable.ic_dialog_alert)
+                    .show();
+        } else {
+            Log.d(TAG, "Signature is valid.");
+
+            // Make the file read-only after copying
+            boolean isDexReadOnly = cachedApkFile.setReadOnly();
+
+            Log.println(isDexReadOnly ? Log.DEBUG : Log.WARN, TAG, "Set DEX file to read-only.");
 
 
-        // --- 2. Define the path for the optimized DEX (ODEX) file ---
-        final File optimizedDexOutputPath = getDir("dex", Context.MODE_PRIVATE);
+            // --- 2. Define the path for the optimized DEX (ODEX) file ---
+            final File optimizedDexOutputPath = getDir("dex", Context.MODE_PRIVATE);
 
-        // --- 3. Initialize DexClassLoader ---
-        dexClassLoader = new DexClassLoader(
-                dexFile.getAbsolutePath(),
-                optimizedDexOutputPath.getAbsolutePath(),
-                null, // No native libraries
-                getClassLoader() // Parent classloader
-        );
+            // --- 3. Initialize DexClassLoader ---
+            dexClassLoader = new DexClassLoader(
+                    cachedApkFile.getAbsolutePath(),
+                    optimizedDexOutputPath.getAbsolutePath(),
+                    null, // No native libraries
+                    getClassLoader() // Parent classloader
+            );
 
-        // --- 4. Use reflection to load the class and invoke the methods
+            // --- 4. Use reflection to load the class and invoke the methods
 
-        // --- non-ui class
-        String ping = (String) callStaticMethod("com.sevencourts.sandbox.app2payload.PingPong", "ping", null, null);
+            // --- non-ui class
+            String ping = (String) callStaticMethod("com.sevencourts.sandbox.app2payload.PingPong", "ping", null, null);
 
-        // --- ui class
+            // --- ui class
 
-        Class<?>[] parameterTypes = new Class<?>[]{Context.class, String.class};
-        Object[] args = new Object[]{this, ping};
-        callStaticMethod("com.sevencourts.sandbox.app2payload.ui.Alert", "show", parameterTypes, args);
+            Class<?>[] parameterTypes = new Class<?>[]{Context.class, String.class};
+            Object[] args = new Object[]{this, ping};
+            callStaticMethod("com.sevencourts.sandbox.app2payload.ui.Alert", "show", parameterTypes, args);
+
+        }
     }
 
     private Object callStaticMethod(String className, String methodName, Class<?>[] parameterTypes, Object[] args) {
@@ -115,4 +136,5 @@ public class MainActivity extends AppCompatActivity {
         }
         return result;
     }
+
 }

@@ -1,3 +1,14 @@
+import java.util.Properties
+import java.io.FileInputStream
+
+val localProperties = Properties()
+
+val localPropertiesFile = rootProject.file("local.properties")
+
+if (localPropertiesFile.exists()) {
+    localProperties.load(FileInputStream(localPropertiesFile))
+}
+
 plugins {
     alias(libs.plugins.android.application)
 }
@@ -8,12 +19,21 @@ android {
 
     defaultConfig {
         applicationId = "com.sevencourts.sandbox.app2payload"
-        minSdk = 24
+        minSdk = 30
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.projectDir.resolve(localProperties.getProperty("PAYLOAD_STORE_FILE") as String)
+            storePassword = localProperties.getProperty("PAYLOAD_STORE_PASSWORD") as String
+            keyAlias = localProperties.getProperty("PAYLOAD_KEY_ALIAS") as String
+            keyPassword = localProperties.getProperty("PAYLOAD_KEY_PASSWORD") as String
+        }
     }
 
     buildTypes {
@@ -23,6 +43,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
